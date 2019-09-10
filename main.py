@@ -14,6 +14,8 @@ import torch.optim as optim
 from gc_net import *
 from python_pfm import *
 
+import matplotlib.pyplot as plt
+
 #preprocess
 def normalizeRGB(img):
     # for i in range(3):
@@ -24,7 +26,17 @@ def normalizeRGB(img):
     #         img[:,i,:,:]=torch.div(img[:,i, :, :]-0.5,0.5)
     # return img
     return img
-tsfm=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))])
+
+mean = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
+std = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
+
+
+
+tsfm=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean.tolist(), std.tolist())])
+unnormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
+
+
+
 
 h=256
 w=512
@@ -33,6 +45,8 @@ batch=1
 net = GcNet(h,w,maxdisp)
 #net=net.cuda()
 net=torch.nn.DataParallel(net).cuda()
+
+show = True
 
 print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
 
@@ -94,6 +108,7 @@ def train(epoch_total,loadstate):
             # print(loss_mul.shape)
             # print(net)
             result=torch.sum(x.mul(loss_mul),1)
+            result = result[:,None,:]
             # print(result.shape)
             tt=loss_fn(result,dispL)
             train_loss+=tt
@@ -107,19 +122,18 @@ def train(epoch_total,loadstate):
             accuracy=torch.sum(diff<3)/float(h*w*batch)
             acc_total+=accuracy
 
-            import matplotlib.pyplot as plt
-            imL_ = imL.cpu().detach().numpy()[0]
-            imR_ = imR.cpu().detach().numpy()[0]
-            disp_ = result.cpu().detach().numpy()[0][0]
-            plt.figure(figsize=(16, 8))
-            plt.subplot(2,2,1)
-            plt.imshow(imL_[0])
-            plt.subplot(2,2,2)
-            plt.imshow(imR_[0])
-            plt.subplot(2,2,3)
-            plt.imshow(disp_)
-
-            plt.show()
+            if(show):
+                imL_ = unnormalize(imL[0]).permute(1,2,0).cpu().detach().numpy()
+                imR_ = unnormalize(imR[0]).permute(1,2,0).cpu().detach().numpy()
+                disp_ = result.cpu().detach().numpy()[0][0]
+                plt.figure(figsize=(16, 8))
+                plt.subplot(2,2,1)
+                plt.imshow( imL_[...,::-1])
+                plt.subplot(2,2,2)
+                plt.imshow(imR_[...,::-1])
+                plt.subplot(2,2,3)
+                plt.imshow(disp_)
+                plt.show()
 
 
             #print('====accuracy for the result less than 3 pixels===:%f' %accuracy)
