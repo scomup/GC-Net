@@ -15,6 +15,8 @@ from gc_net import *
 from python_pfm import *
 
 import matplotlib.pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
+torch.backends.cudnn.benchmark = True
 
 #preprocess
 def normalizeRGB(img):
@@ -26,6 +28,13 @@ def normalizeRGB(img):
     #         img[:,i,:,:]=torch.div(img[:,i, :, :]-0.5,0.5)
     # return img
     return img
+
+def print_gpu_info():
+    print(torch.cuda.get_device_name(0))
+    print('Memory Usage:')
+    print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3, 1), 'GB')
+    print('Cached:   ', round(torch.cuda.memory_cached(0)/1024**3, 1), 'GB')
+
 
 mean = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
 std = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32)
@@ -40,13 +49,13 @@ unnormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 h=256
 w=512
-maxdisp=64 #gc_net.py also need to change  must be a multiple of 32...maybe can cancel the outpadding of deconv
+maxdisp=96 #gc_net.py also need to change  must be a multiple of 32...maybe can cancel the outpadding of deconv
 batch=1
 net = GcNet(h,w,maxdisp)
 #net=net.cuda()
 net=torch.nn.DataParallel(net).cuda()
 
-show = True
+show = False
 
 print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
 
@@ -71,11 +80,16 @@ def train(epoch_total,loadstate):
     loss_list=[]
     print(len(dataloader))
     start_epoch=0
+
+    writer = SummaryWriter()
+    n_iter = 0
+
     if loadstate==True:
         checkpoint = torch.load('./checkpoint/ckpt.t7')
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch']
         accu=checkpoint['accur']
+
     #print('startepoch:%d accuracy:%f' %(start_epoch,accu))
     for epoch in range(start_epoch,epoch_total):
         net.train()
@@ -110,13 +124,15 @@ def train(epoch_total,loadstate):
             result=torch.sum(x.mul(loss_mul),1)
             result = result[:,None,:]
             # print(result.shape)
+            #print_gpu_info()
             tt=loss_fn(result,dispL)
-            train_loss+=tt
+            #print_gpu_info()
+            train_loss+=tt.item()
             # tt = loss(x, loss_mul, dispL)
             tt.backward()
             optimizer.step()
-            print('=======loss value for every step=======:%f' % (tt))
-            print('=======average loss value for every step=======:%f' %(train_loss/(step+1)))
+
+
             result=result.view(batch,1,h,w)
             diff=torch.abs(result.cpu()-dispL.cpu())
             accuracy=torch.sum(diff<3)/float(h*w*batch)
@@ -135,6 +151,14 @@ def train(epoch_total,loadstate):
                 plt.imshow(disp_)
                 plt.show()
 
+            show_n = 1
+            if step % show_n == (show_n - 1):
+                writer.add_scalar('Loss/train_loss', train_loss/show_n, n_iter)
+                n_iter += 1
+                print('[%d, %5d, %5d] train_loss %.5f' % (
+                    epoch + 1, step + 1, len(dataloader), train_loss/show_n))
+                train_loss = 0.0
+
 
             #print('====accuracy for the result less than 3 pixels===:%f' %accuracy)
             #print('====average accuracy for the result less than 3 pixels===:%f' % (acc_total/(step+1)))
@@ -147,12 +171,6 @@ def train(epoch_total,loadstate):
                 state={'net':net.state_dict(),'step':step,
                        'loss_list':loss_list,'epoch':epoch,'accur':acc_total}
                 torch.save(state,'checkpoint/ckpt.t7')
-
-                im = result[0, :, :, :].cpu().detach().numpy().astype('uint8')
-                im = np.transpose(im, (1, 2, 0))
-                cv2.imwrite('train_result.png', im, [int(cv2.IMWRITE_PNG_COMPRESSION), 0])
-                gt = np.transpose(dispL[0, :, :, :].cpu().numpy(), (1, 2, 0))
-                cv2.imwrite('train_gt.png', gt, [int(cv2.IMWRITE_PNG_COMPRESSION), 0])
 
     fp=open('loss.txt','w')
     for i in range(len(loss_list)):
