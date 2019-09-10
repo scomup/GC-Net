@@ -1,9 +1,9 @@
 import os
 import pickle
 # dir = "disparity"
-dir_driving='../disparity_driving'
-dir_flying='../disparity_flying/TRAIN'
-dir_monkk='../disparity_monkk/disparity'
+dir_driving='/home/liu/DP_DATA/STEREO/driving_disparity'
+dir_flying='/home/liu/DP_DATA/STEREO/frames_disparity/TRAIN'
+dir_monkk='/home/liu/DP_DATA/STEREO/monkaa_disparity'
 
 paths=[]
 paths_test=[]

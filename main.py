@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -26,12 +28,13 @@ tsfm=transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean=(0.5, 0
 
 h=256
 w=512
-maxdisp=160 #gc_net.py also need to change  must be a multiple of 32...maybe can cancel the outpadding of deconv
-batch=4
+maxdisp=64 #gc_net.py also need to change  must be a multiple of 32...maybe can cancel the outpadding of deconv
+batch=1
 net = GcNet(h,w,maxdisp)
 #net=net.cuda()
 net=torch.nn.DataParallel(net).cuda()
 
+print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
 
 #train
 def train(epoch_total,loadstate):
@@ -59,7 +62,7 @@ def train(epoch_total,loadstate):
         net.load_state_dict(checkpoint['net'])
         start_epoch = checkpoint['epoch']
         accu=checkpoint['accur']
-    print('startepoch:%d accuracy:%f' %(start_epoch,accu))
+    #print('startepoch:%d accuracy:%f' %(start_epoch,accu))
     for epoch in range(start_epoch,epoch_total):
         net.train()
         data_iter = iter(dataloader)
@@ -68,7 +71,7 @@ def train(epoch_total,loadstate):
         train_loss=0
         acc_total=0
         for step in range(len(dataloader)-1):
-            print('----epoch:%d------step:%d------' %(epoch,step))
+            #print('----epoch:%d------step:%d------' %(epoch,step))
             data = next(data_iter)
 
             randomH = np.random.randint(0, 160)
@@ -76,9 +79,9 @@ def train(epoch_total,loadstate):
             imageL = data['imL'][:,:,randomH:(randomH+h),randomW:(randomW+w)]
             imageR = data['imR'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
             disL = data['dispL'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
-            imL.data.resize_(imageL.size()).copy_(imageL)
-            imR.data.resize_(imageR.size()).copy_(imageR)
-            dispL.data.resize_(disL.size()).copy_(disL)
+            imL.resize_(imageL.size()).copy_(imageL)
+            imR.resize_(imageR.size()).copy_(imageR)
+            dispL.resize_(disL.size()).copy_(disL)
             #normalize
             # imgL=normalizeRGB(imL)
             # imgR=normalizeRGB(imR)
@@ -93,19 +96,34 @@ def train(epoch_total,loadstate):
             result=torch.sum(x.mul(loss_mul),1)
             # print(result.shape)
             tt=loss_fn(result,dispL)
-            train_loss+=tt.data
+            train_loss+=tt
             # tt = loss(x, loss_mul, dispL)
             tt.backward()
             optimizer.step()
-            print('=======loss value for every step=======:%f' % (tt.data))
+            print('=======loss value for every step=======:%f' % (tt))
             print('=======average loss value for every step=======:%f' %(train_loss/(step+1)))
             result=result.view(batch,1,h,w)
-            diff=torch.abs(result.data.cpu()-dispL.data.cpu())
-            print(diff.shape)
+            diff=torch.abs(result.cpu()-dispL.cpu())
             accuracy=torch.sum(diff<3)/float(h*w*batch)
             acc_total+=accuracy
-            print('====accuracy for the result less than 3 pixels===:%f' %accuracy)
-            print('====average accuracy for the result less than 3 pixels===:%f' % (acc_total/(step+1)))
+
+            import matplotlib.pyplot as plt
+            imL_ = imL.cpu().detach().numpy()[0]
+            imR_ = imR.cpu().detach().numpy()[0]
+            disp_ = result.cpu().detach().numpy()[0][0]
+            plt.figure(figsize=(16, 8))
+            plt.subplot(2,2,1)
+            plt.imshow(imL_[0])
+            plt.subplot(2,2,2)
+            plt.imshow(imR_[0])
+            plt.subplot(2,2,3)
+            plt.imshow(disp_)
+
+            plt.show()
+
+
+            #print('====accuracy for the result less than 3 pixels===:%f' %accuracy)
+            #print('====average accuracy for the result less than 3 pixels===:%f' % (acc_total/(step+1)))
 
             # save
             if step%100==0:
@@ -116,10 +134,10 @@ def train(epoch_total,loadstate):
                        'loss_list':loss_list,'epoch':epoch,'accur':acc_total}
                 torch.save(state,'checkpoint/ckpt.t7')
 
-                im = result[0, :, :, :].data.cpu().numpy().astype('uint8')
+                im = result[0, :, :, :].cpu().detach().numpy().astype('uint8')
                 im = np.transpose(im, (1, 2, 0))
                 cv2.imwrite('train_result.png', im, [int(cv2.IMWRITE_PNG_COMPRESSION), 0])
-                gt = np.transpose(dispL[0, :, :, :].data.cpu().numpy(), (1, 2, 0))
+                gt = np.transpose(dispL[0, :, :, :].cpu().numpy(), (1, 2, 0))
                 cv2.imwrite('train_gt.png', gt, [int(cv2.IMWRITE_PNG_COMPRESSION), 0])
 
     fp=open('loss.txt','w')
@@ -153,9 +171,9 @@ def test(loadstate):
     imageL = data['imL'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
     imageR = data['imR'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
     disL = data['dispL'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
-    imL.data.resize_(imageL.size()).copy_(imageL)
-    imR.data.resize_(imageR.size()).copy_(imageR)
-    dispL.data.resize_(disL.size()).copy_(disL)
+    imL.resize_(imageL.size()).copy_(imageL)
+    imR.resize_(imageR.size()).copy_(imageR)
+    dispL.resize_(disL.size()).copy_(disL)
     loss_mul_list_test = []
     for d in range(maxdisp):
         loss_mul_temp = Variable(torch.Tensor(np.ones([1, 1, h, w]) * d)).cuda()
@@ -166,16 +184,16 @@ def test(loadstate):
         result=net(imL,imR)
 
     disp=torch.sum(result.mul(loss_mul_test),1)
-    diff = torch.abs(disp.data.cpu() -dispL.data.cpu())  # end-point-error
+    diff = torch.abs(disp.cpu() -dispL.cpu())  # end-point-error
 
     accuracy = torch.sum(diff < 3) / float(h * w)
     print('test accuracy less than 3 pixels:%f' %accuracy)
 
     # save
-    im=disp.data.cpu().numpy().astype('uint8')
+    im=disp.cpu().numpy().astype('uint8')
     im=np.transpose(im,(1,2,0))
     cv2.imwrite('test_result.png',im,[int(cv2.IMWRITE_PNG_COMPRESSION), 0])
-    gt=np.transpose(dispL[0,:,:,:].data.cpu().numpy(),(1,2,0))
+    gt=np.transpose(dispL[0,:,:,:].cpu().numpy(),(1,2,0))
     cv2.imwrite('test_gt.png',gt,[int(cv2.IMWRITE_PNG_COMPRESSION), 0])
     return disp
 
@@ -187,4 +205,6 @@ def main():
 
 
 if __name__=='__main__':
+    import torch.multiprocessing as mp
+    mp.set_start_method('spawn')
     main()

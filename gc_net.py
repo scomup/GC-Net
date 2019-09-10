@@ -136,7 +136,7 @@ class GC_NET(nn.Module):
             xx_temp = torch.cat((xleft, xright), 1)
             xx_list.append(xx_temp)
         xx = torch.cat(xx_list, 1)
-        xx = xx.view(1, self.maxdisp, 64, int(self.height / 2), int(self.width / 2) + self.maxdisp)
+        xx = xx.view(xx.shape[0], self.maxdisp, 64, int(self.height / 2), int(self.width / 2) + self.maxdisp)
         xx0=xx.permute(0,2,1,3,4)
         xx0 = xx0[:, :, :, :, :int(self.width / 2)]
         return xx0
