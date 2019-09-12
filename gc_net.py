@@ -83,6 +83,7 @@ class GC_NET(nn.Module):
         #self.debn5=nn.BatchNorm3d(1)         #not sure
 
     def forward(self, imgLeft,imgRight):
+        B = imgLeft.shape[0]
         imgl0=F.relu(self.bn0(self.conv0(imgLeft)))
         imgr0=F.relu(self.bn0(self.conv0(imgRight)))
 
@@ -112,7 +113,7 @@ class GC_NET(nn.Module):
 
         #last deconv3d
         deconv3d=self.deconv5(deconv3d)
-        out=deconv3d.view(1, self.maxdisp*2, self.height, self.width)
+        out=deconv3d.view(B, self.maxdisp*2, self.height, self.width)
         prob=F.softmax(-out,1)
         return prob
 

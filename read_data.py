@@ -14,6 +14,7 @@ class sceneDisp(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
+        self.s = 2
         self.root_dir = root_dir
         self.settype=settype
         self.transform = transform
@@ -38,10 +39,7 @@ class sceneDisp(Dataset):
             self.disp_right[i]=r
 
     def __len__(self):
-        if self.settype=='train':
-            return 35454
-        if self.settype=='test':
-            return 4370
+        return len(self.paths_left)
 
     def __getitem__(self, idx):
 
@@ -49,9 +47,16 @@ class sceneDisp(Dataset):
         # print(self.paths_right[idx])
         # print(self.disp_left[idx])
         # print(self.disp_right[idx])
-        imageL = cv2.imread(self.paths_left[idx]).reshape(540,960,3)#.transpose((2, 0, 1))
-        imageR = cv2.imread(self.paths_right[idx]).reshape(540,960,3)#.transpose((2, 0, 1))
-        dispL = readPFM(self.disp_left[idx])[0].astype(np.uint8).reshape(540,960,1).transpose((2, 0, 1))
+        imageL = cv2.imread(self.paths_left[idx])
+        imageR = cv2.imread(self.paths_right[idx])
+        dispL = readPFM(self.disp_left[idx])[0].astype(np.uint8)
+        H,W,_ = imageL.shape
+        new_size = (int(H/self.s), int(W/self.s))
+        imageL = cv2.resize(imageL, new_size,interpolation=cv2.INTER_NEAREST)
+        imageR = cv2.resize(imageR, new_size,interpolation=cv2.INTER_NEAREST)
+        dispL = cv2.resize(dispL, new_size,interpolation=cv2.INTER_NEAREST)[None,:]
+        dispL = dispL/2
+
         sample = {'imL': imageL, 'imR': imageR, 'dispL': dispL}
         if self.transform is not None:
             sample['imL']=self.transform(sample['imL'])

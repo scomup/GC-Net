@@ -3,6 +3,11 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
+import sys
+try:
+    sys.path.remove('/opt/ros/kinetic/lib/python2.7/dist-packages')
+except:
+    pass
 import cv2
 from torch.utils.data import Dataset, DataLoader
 
@@ -47,17 +52,22 @@ unnormalize = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
 
 
-h=256
-w=512
+#h=256
+#w=512
+
+h=128
+w=256
+
+
 maxdisp=96 #gc_net.py also need to change  must be a multiple of 32...maybe can cancel the outpadding of deconv
-batch=1
+batch=2
 net = GcNet(h,w,maxdisp)
 #net=net.cuda()
 net=torch.nn.DataParallel(net).cuda()
 
 show = False
-
-print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
+show = True
+#print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
 
 #train
 def train(epoch_total,loadstate):
@@ -70,6 +80,7 @@ def train(epoch_total,loadstate):
 
     optimizer = optim.RMSprop(net.parameters(), lr=0.001, alpha=0.9)
     dataset = sceneDisp('','train',tsfm)
+    _,H,W = dataset.__getitem__(0)['imL'].shape
     loss_fn=nn.L1Loss()
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch, shuffle=True,num_workers=1)
 
@@ -78,7 +89,6 @@ def train(epoch_total,loadstate):
     dispL = Variable(torch.FloatTensor(1).cuda())
 
     loss_list=[]
-    print(len(dataloader))
     start_epoch=0
 
     writer = SummaryWriter()
@@ -91,19 +101,20 @@ def train(epoch_total,loadstate):
         accu=checkpoint['accur']
 
     #print('startepoch:%d accuracy:%f' %(start_epoch,accu))
+    
     for epoch in range(start_epoch,epoch_total):
         net.train()
         data_iter = iter(dataloader)
 
-        print('\nEpoch: %d' % epoch)
+        #print('\nEpoch: %d' % epoch)
         train_loss=0
         acc_total=0
         for step in range(len(dataloader)-1):
             #print('----epoch:%d------step:%d------' %(epoch,step))
             data = next(data_iter)
 
-            randomH = np.random.randint(0, 160)
-            randomW = np.random.randint(0, 400)
+            randomH = np.random.randint(0, H-h-1)
+            randomW = np.random.randint(0, W-w-1)
             imageL = data['imL'][:,:,randomH:(randomH+h),randomW:(randomW+w)]
             imageR = data['imR'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
             disL = data['dispL'][:, :, randomH:(randomH + h), randomW:(randomW + w)]
@@ -141,19 +152,32 @@ def train(epoch_total,loadstate):
             if(show):
                 imL_ = unnormalize(imL[0]).permute(1,2,0).cpu().detach().numpy()
                 imR_ = unnormalize(imR[0]).permute(1,2,0).cpu().detach().numpy()
-                disp_ = result.cpu().detach().numpy()[0][0]
+                disp_TRUE_ = disL.cpu().detach().numpy()[0][0]
+                disp_NET_ = result.cpu().detach().numpy()[0][0]
                 plt.figure(figsize=(16, 8))
                 plt.subplot(2,2,1)
                 plt.imshow( imL_[...,::-1])
                 plt.subplot(2,2,2)
                 plt.imshow(imR_[...,::-1])
                 plt.subplot(2,2,3)
-                plt.imshow(disp_)
+                plt.imshow(disp_TRUE_,cmap='rainbow',vmin=0, vmax=maxdisp)
+                plt.colorbar()
+                plt.subplot(2,2,4)
+                plt.imshow(disp_NET_,cmap='rainbow',vmin=0, vmax=maxdisp)
+                plt.colorbar()
+
                 plt.show()
 
-            show_n = 1
+            show_n = 10
             if step % show_n == (show_n - 1):
                 writer.add_scalar('Loss/train_loss', train_loss/show_n, n_iter)
+                #imL_ = unnormalize(imL[0])
+                #disp_NET_ = result[0]
+                #writer.add_image('Image/left', imL_, n_iter)
+                #writer.add_image('Image/disparity', disp_NET_, n_iter)
+                writer.close()
+
+
                 n_iter += 1
                 print('[%d, %5d, %5d] train_loss %.5f' % (
                     epoch + 1, step + 1, len(dataloader), train_loss/show_n))
@@ -164,18 +188,10 @@ def train(epoch_total,loadstate):
             #print('====average accuracy for the result less than 3 pixels===:%f' % (acc_total/(step+1)))
 
             # save
-            if step%100==0:
-                loss_list.append(train_loss/(step+1))
-            if (step>1 and step%200==0) or step==len(dataloader)-2:
-                print('=======>saving model......')
+            if step%1000==0:
                 state={'net':net.state_dict(),'step':step,
                        'loss_list':loss_list,'epoch':epoch,'accur':acc_total}
                 torch.save(state,'checkpoint/ckpt.t7')
-
-    fp=open('loss.txt','w')
-    for i in range(len(loss_list)):
-        fp.write(str(loss_list[i][0]))
-        fp.write('\n')
     fp.close()
 
 
