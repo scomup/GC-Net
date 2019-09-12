@@ -49,13 +49,14 @@ class sceneDisp(Dataset):
         # print(self.disp_right[idx])
         imageL = cv2.imread(self.paths_left[idx])
         imageR = cv2.imread(self.paths_right[idx])
-        dispL = readPFM(self.disp_left[idx])[0].astype(np.uint8)
+        dispL = readPFM(self.disp_left[idx])[0]
         H,W,_ = imageL.shape
-        new_size = (int(H/self.s), int(W/self.s))
+        new_size = (int(W/self.s), int(H/self.s))
         imageL = cv2.resize(imageL, new_size,interpolation=cv2.INTER_NEAREST)
         imageR = cv2.resize(imageR, new_size,interpolation=cv2.INTER_NEAREST)
         dispL = cv2.resize(dispL, new_size,interpolation=cv2.INTER_NEAREST)[None,:]
         dispL = dispL/2
+        dispL = np.clip(dispL, 0, 96)
 
         sample = {'imL': imageL, 'imR': imageR, 'dispL': dispL}
         if self.transform is not None:

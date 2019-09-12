@@ -66,7 +66,8 @@ net = GcNet(h,w,maxdisp)
 net=torch.nn.DataParallel(net).cuda()
 
 show = False
-show = True
+#show = True
+show_n = 20
 #print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in net.parameters()])))
 
 #train
@@ -149,6 +150,23 @@ def train(epoch_total,loadstate):
             accuracy=torch.sum(diff<3)/float(h*w*batch)
             acc_total+=accuracy
 
+
+
+        
+            if step % show_n == (show_n - 1):
+                writer.add_scalar('Loss/train_loss', train_loss/show_n, n_iter)
+                #imL_ = unnormalize(imL[0])
+                #disp_NET_ = result[0]
+                #writer.add_image('Image/left', imL_, n_iter)
+                #writer.add_image('Image/disparity', disp_NET_, n_iter)
+                writer.close()
+
+
+                n_iter += 1
+                print('[%d, %5d, %5d] train_loss %.5f' % (
+                    epoch + 1, step + 1, len(dataloader), train_loss/show_n))
+                train_loss = 0.0
+
             if(show):
                 imL_ = unnormalize(imL[0]).permute(1,2,0).cpu().detach().numpy()
                 imR_ = unnormalize(imR[0]).permute(1,2,0).cpu().detach().numpy()
@@ -165,24 +183,7 @@ def train(epoch_total,loadstate):
                 plt.subplot(2,2,4)
                 plt.imshow(disp_NET_,cmap='rainbow',vmin=0, vmax=maxdisp)
                 plt.colorbar()
-
                 plt.show()
-
-            show_n = 10
-            if step % show_n == (show_n - 1):
-                writer.add_scalar('Loss/train_loss', train_loss/show_n, n_iter)
-                #imL_ = unnormalize(imL[0])
-                #disp_NET_ = result[0]
-                #writer.add_image('Image/left', imL_, n_iter)
-                #writer.add_image('Image/disparity', disp_NET_, n_iter)
-                writer.close()
-
-
-                n_iter += 1
-                print('[%d, %5d, %5d] train_loss %.5f' % (
-                    epoch + 1, step + 1, len(dataloader), train_loss/show_n))
-                train_loss = 0.0
-
 
             #print('====accuracy for the result less than 3 pixels===:%f' %accuracy)
             #print('====average accuracy for the result less than 3 pixels===:%f' % (acc_total/(step+1)))
